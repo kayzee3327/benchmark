@@ -2,6 +2,7 @@ from benchmark.benchmark import benchmark
 from benchmark.config import BenchmarkConfig
 from benchmark.measurement import Measurer
 from benchmark.measurers.cpu import WallClockMeasurer
+from benchmark.measurers.npu import NpuEventMeasurer
 from benchmark.reference import Reference
 from benchmark.result import (
     BenchmarkResult,
@@ -21,6 +22,7 @@ __all__ = [
     "default_comparator",
     "Measurer",
     "MeasurementResult",
+    "NpuEventMeasurer",
     "Reference",
     "ValidationResult",
     "WallClockMeasurer",
