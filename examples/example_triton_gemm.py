@@ -1,5 +1,7 @@
 """Example: benchmarking a Triton GEMM kernel against torch.matmul on Ascend NPU."""
 
+import argparse
+
 import torch
 import torch_npu
 import triton
@@ -78,7 +80,12 @@ def triton_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 
 def main():
-    M, N, K = 1024, 1024, 1024
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-M", type=int, default=128)
+    parser.add_argument("-N", type=int, default=128)
+    parser.add_argument("-K", type=int, default=128)
+    args = parser.parse_args()
+    M, N, K = args.M, args.N, args.K
 
     a = torch.randn(M, K, device="npu", dtype=torch.float16)
     b = torch.randn(K, N, device="npu", dtype=torch.float16)

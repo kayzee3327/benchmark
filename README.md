@@ -2,6 +2,25 @@
 
 A generic Python benchmark framework for operator optimization. Define what to run — the framework validates correctness and measures performance.
 
+## Project structure
+
+```
+benchmark/
+├── src/
+│   └── benchmark/       # package source
+│       ├── measurers/   # built-in measurers (cpu, npu)
+│       ├── benchmark.py
+│       ├── config.py
+│       ├── measurement.py
+│       ├── reference.py
+│       ├── result.py
+│       ├── utils.py
+│       └── validation.py
+├── examples/
+├── tests/
+└── pyproject.toml
+```
+
 ## Install
 
 ```bash
