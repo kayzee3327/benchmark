@@ -54,27 +54,6 @@ def matmul_kernel(
     tl.store(c_ptrs, acc, mask=mask)
 
 
-def triton_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    M, K = a.shape
-    K, N = b.shape
-    c = torch.empty((M, N), device=a.device, dtype=torch.float32)
-
-    BLOCK_M, BLOCK_N, BLOCK_K = 64, 64, 32
-    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
-
-    matmul_kernel[grid](
-        a, b, c,
-        M, N, K,
-        a.stride(0), a.stride(1),
-        b.stride(0), b.stride(1),
-        c.stride(0), c.stride(1),
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
-        BLOCK_K=BLOCK_K,
-    )
-    return c
-
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -89,12 +68,29 @@ def main():
 
     a = torch.randn(M, K, device="npu", dtype=torch.float16)
     b = torch.randn(K, N, device="npu", dtype=torch.float16)
+    c = torch.empty((M, N), device="npu", dtype=torch.float32)
+
+    BLOCK_M, BLOCK_N, BLOCK_K = 64, 64, 32
+    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
+
+    def run_kernel():
+        matmul_kernel[grid](
+            a, b, c,
+            M, N, K,
+            a.stride(0), a.stride(1),
+            b.stride(0), b.stride(1),
+            c.stride(0), c.stride(1),
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K,
+        )
 
     def torch_ref():
         return torch.matmul(a.float(), b.float())
 
     result = benchmark(
-        target=lambda: triton_matmul(a, b),
+        target=run_kernel,
+        output_fn=lambda: c.clone(),
         references=[
             Reference("torch.matmul", torch_ref),
         ],

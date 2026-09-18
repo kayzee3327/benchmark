@@ -25,6 +25,7 @@ def benchmark(
     comparator: Comparator | None = None,
     measurer: Measurer | None = None,
     config: BenchmarkConfig | None = None,
+    output_fn: Callable[[], Any] | None = None,
 ) -> BenchmarkResult:
     if config is None:
         config = BenchmarkConfig()
@@ -42,9 +43,11 @@ def benchmark(
     ref_results: list[ImplementationResult] = []
     all_passed = True
     if references:
-        target_output = target()
+        target_ret = target()
+        target_output = output_fn() if output_fn else target_ret
         for ref in references:
-            ref_output = ref.fn()
+            ref_ret = ref.fn()
+            ref_output = ref.output_fn() if ref.output_fn else ref_ret
             v = validate(target_output, ref.name, ref_output, comparator)
             if not v.passed:
                 all_passed = False

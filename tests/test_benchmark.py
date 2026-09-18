@@ -171,3 +171,69 @@ def test_references_not_measured_on_failure():
     assert result.references[0].validation.passed is False
     assert result.target.measurement is None
     assert result.references[0].measurement is None
+
+
+def test_output_fn_for_inplace_target():
+    """output_fn extracts the result for an in-place target that returns None."""
+    buf = [0]
+
+    def inplace_target():
+        buf[0] = 42
+
+    result = benchmark(
+        target=inplace_target,
+        references=[Reference("ref", lambda: 42)],
+        comparator=lambda actual, expected: (
+            None if actual == expected else (_ for _ in ()).throw(ValueError("mismatch"))
+        ),
+        output_fn=lambda: buf[0],
+        config=BenchmarkConfig(warmup=1, repeat=3),
+    )
+    assert result.references[0].validation.passed is True
+
+
+def test_output_fn_on_reference():
+    """Reference.output_fn extracts the result for an in-place reference."""
+    target_buf = [0]
+    ref_buf = [0]
+
+    def inplace_target():
+        target_buf[0] = 99
+
+    def inplace_ref():
+        ref_buf[0] = 99
+
+    result = benchmark(
+        target=inplace_target,
+        references=[
+            Reference("ref", inplace_ref, output_fn=lambda: ref_buf[0]),
+        ],
+        comparator=lambda actual, expected: (
+            None if actual == expected else (_ for _ in ()).throw(ValueError("mismatch"))
+        ),
+        output_fn=lambda: target_buf[0],
+        config=BenchmarkConfig(warmup=1, repeat=3),
+    )
+    assert result.references[0].validation.passed is True
+
+
+def test_output_fn_target_called_once_during_validation():
+    """With output_fn, target is called exactly once in the validation phase."""
+    call_count = [0]
+
+    def counting_target():
+        call_count[0] += 1
+
+    result = benchmark(
+        target=counting_target,
+        references=[Reference("ref", lambda: None)],
+        comparator=lambda a, e: None,
+        output_fn=lambda: "result",
+        measurer=WallClockMeasurer(),
+        config=BenchmarkConfig(warmup=1, repeat=3),
+    )
+    warmup_calls = 1
+    validation_calls = 1
+    measurement_warmup = 1
+    measurement_repeat = 3
+    assert call_count[0] == warmup_calls + validation_calls + measurement_warmup + measurement_repeat

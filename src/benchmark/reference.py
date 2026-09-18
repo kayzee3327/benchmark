@@ -8,3 +8,4 @@ from typing import Any, Callable
 class Reference:
     name: str
     fn: Callable[[], Any]
+    output_fn: Callable[[], Any] | None = None
