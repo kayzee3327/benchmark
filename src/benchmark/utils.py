@@ -81,3 +81,93 @@ def _print_measurement_table(impls: list[ImplementationResult]) -> None:
                 ratio = ref_median / target_median
                 print(f"  vs {impl.name}: {ratio:.2f}x")
         print()
+
+
+def print_results_table(
+    named_results: list[tuple[str, BenchmarkResult]],
+) -> None:
+    PASS = "\033[32mPASS\033[0m"
+    FAIL = "\033[31mFAIL\033[0m"
+    NA = "-"
+
+    has_refs = any(r.references for _, r in named_results)
+
+    headers = ["Benchmark"]
+    if has_refs:
+        headers.append("Valid")
+    headers += ["Target (ms)", "Ref (ms)", "Speedup"] if has_refs else ["Time (ms)"]
+
+    rows: list[list[str]] = []
+    for name, result in named_results:
+        target_m = result.target.measurement
+        row = [name]
+
+        if has_refs:
+            if result.references:
+                all_passed = all(
+                    r.validation.passed
+                    for r in result.references
+                    if r.validation is not None
+                )
+                row.append(PASS if all_passed else FAIL)
+            else:
+                row.append(NA)
+
+        if target_m is not None:
+            row.append(f"{target_m.median_ms:.4f}")
+        else:
+            row.append(NA)
+
+        if has_refs:
+            if result.references and result.references[0].measurement is not None:
+                ref_m = result.references[0].measurement
+                row.append(f"{ref_m.median_ms:.4f}")
+                if target_m is not None and target_m.median_ms > 0:
+                    speedup = ref_m.median_ms / target_m.median_ms
+                    row.append(f"{speedup:.2f}x")
+                else:
+                    row.append(NA)
+            else:
+                row += [NA, NA]
+
+        rows.append(row)
+
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            visible = cell.replace("\033[32m", "").replace("\033[31m", "").replace("\033[0m", "")
+            col_widths[i] = max(col_widths[i], len(visible))
+
+    def _visible_len(s: str) -> int:
+        return len(s.replace("\033[32m", "").replace("\033[31m", "").replace("\033[0m", ""))
+
+    def fmt_cell(cell: str, width: int, align_left: bool) -> str:
+        pad = width - _visible_len(cell)
+        if align_left:
+            return cell + " " * pad
+        return " " * pad + cell
+
+    sep = "  "
+    header_line = sep.join(
+        fmt_cell(h, col_widths[i], i == 0) for i, h in enumerate(headers)
+    )
+    divider = sep.join("-" * w for w in col_widths)
+
+    print(header_line)
+    print(divider)
+    for row in rows:
+        print(sep.join(
+            fmt_cell(row[i], col_widths[i], i == 0) for i in range(len(headers))
+        ))
+
+    failed = []
+    for name, result in named_results:
+        for ref in result.references:
+            if ref.validation is not None and not ref.validation.passed:
+                failed.append((name, ref))
+    if failed:
+        print()
+        print("Validation errors:")
+        for bench_name, ref in failed:
+            first_line = ref.validation.error.splitlines()[0] if ref.validation.error else "unknown"
+            print(f"  {bench_name} vs {ref.name}: {first_line}")

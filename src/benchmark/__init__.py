@@ -10,7 +10,7 @@ from benchmark.result import (
     MeasurementResult,
     ValidationResult,
 )
-from benchmark.utils import print_result
+from benchmark.utils import print_result, print_results_table
 from benchmark.validation import Comparator, default_comparator
 
 __all__ = [
@@ -27,4 +27,5 @@ __all__ = [
     "ValidationResult",
     "WallClockMeasurer",
     "print_result",
+    "print_results_table",
 ]
