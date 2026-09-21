@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from benchmark.result import BenchmarkResult, ImplementationResult
+from benchmark.result import BenchmarkResult, ImplementationResult, MeasurementResult, ReferenceResult
 
 
 def print_result(result: BenchmarkResult) -> None:
-    all_impls = [result.target] + result.references
+    all_impls: list[ImplementationResult] = [result.target] + result.references
 
     # --- Validation ---
-    has_validations = any(r.validation is not None for r in result.references)
+    has_validations = any(
+        isinstance(r, ReferenceResult) and r.validation is not None
+        for r in result.references
+    )
     if has_validations:
         print("Validation")
         print("-" * 40)
@@ -34,19 +37,36 @@ def print_result(result: BenchmarkResult) -> None:
         return
 
     _print_measurement_table(measured)
+    _print_comparison(result)
 
 
 def _print_measurement_table(impls: list[ImplementationResult]) -> None:
-    headers = ["Name", "Min (ms)", "Median (ms)", "Mean (ms)"]
+    pct_keys: list[str] = []
+    for impl in impls:
+        if impl.measurement and impl.measurement.percentiles_ms:
+            pct_keys = sorted(impl.measurement.percentiles_ms.keys())
+            break
+
+    headers = ["Name", "Min (ms)", "Median (ms)", "Mean (ms)", "Max (ms)", "MAD (ms)"]
+    for key in pct_keys:
+        headers.append(f"{key} (ms)")
+
     rows: list[list[str]] = []
     for impl in impls:
         m = impl.measurement
-        rows.append([
+        if m is None:
+            continue
+        row = [
             impl.name,
             f"{m.min_ms:.4f}",
             f"{m.median_ms:.4f}",
             f"{m.mean_ms:.4f}",
-        ])
+            f"{m.max_ms:.4f}",
+            f"{m.mad_ms:.4f}",
+        ]
+        for key in pct_keys:
+            row.append(f"{m.percentiles_ms.get(key, 0):.4f}")
+        rows.append(row)
 
     col_widths = [len(h) for h in headers]
     for row in rows:
@@ -70,17 +90,26 @@ def _print_measurement_table(impls: list[ImplementationResult]) -> None:
         print(f"  {fmt_row(row)}")
     print()
 
-    # --- Speedup vs target ---
-    if len(impls) > 1:
-        target_median = impls[0].measurement.median_ms
-        print("Speedup (target / reference median)")
-        print("-" * 40)
-        for impl in impls[1:]:
-            ref_median = impl.measurement.median_ms
-            if ref_median > 0:
-                ratio = ref_median / target_median
-                print(f"  vs {impl.name}: {ratio:.2f}x")
-        print()
+
+def _print_comparison(result: BenchmarkResult) -> None:
+    refs_with_cmp = [
+        r for r in result.references
+        if isinstance(r, ReferenceResult) and r.comparison is not None
+    ]
+    if not refs_with_cmp:
+        return
+
+    print("Comparison (target / reference)")
+    print("-" * 40)
+    for ref in refs_with_cmp:
+        c = ref.comparison
+        line = f"  vs {c.reference_name}: {c.median_speedup:.2f}x (median ratio)"
+        if c.paired_median_ratio is not None:
+            line += f"  paired: {c.paired_median_ratio:.2f}x"
+        if c.ci_95_low is not None and c.ci_95_high is not None:
+            line += f"  95% CI [{c.ci_95_low:.2f}x, {c.ci_95_high:.2f}x]"
+        print(line)
+    print()
 
 
 def print_results_table(
@@ -91,11 +120,38 @@ def print_results_table(
     NA = "-"
 
     has_refs = any(r.references for _, r in named_results)
+    has_paired = any(
+        isinstance(ref, ReferenceResult)
+        and ref.comparison is not None
+        and ref.comparison.paired_median_ratio is not None
+        for _, r in named_results
+        for ref in r.references
+    )
+
+    pct_keys: list[str] = []
+    for _, result in named_results:
+        m = result.target.measurement
+        if m is not None and m.percentiles_ms:
+            pct_keys = sorted(m.percentiles_ms.keys())
+            break
 
     headers = ["Benchmark"]
     if has_refs:
         headers.append("Valid")
-    headers += ["Target (ms)", "Ref (ms)", "Speedup"] if has_refs else ["Time (ms)"]
+    if has_refs:
+        headers += ["Target (ms)", "MAD"]
+        for key in pct_keys:
+            headers.append(key)
+        headers += ["Ref (ms)", "MAD"]
+        for key in pct_keys:
+            headers.append(f"r.{key}")
+        headers.append("Speedup")
+        if has_paired:
+            headers += ["Paired", "95% CI"]
+    else:
+        headers += ["Time (ms)", "MAD"]
+        for key in pct_keys:
+            headers.append(key)
 
     rows: list[list[str]] = []
     for name, result in named_results:
@@ -115,20 +171,45 @@ def print_results_table(
 
         if target_m is not None:
             row.append(f"{target_m.median_ms:.4f}")
+            row.append(f"{target_m.mad_ms:.4f}")
+            for key in pct_keys:
+                row.append(f"{target_m.percentiles_ms.get(key, 0):.4f}")
         else:
             row.append(NA)
+            row.append(NA)
+            for _ in pct_keys:
+                row.append(NA)
 
         if has_refs:
-            if result.references and result.references[0].measurement is not None:
-                ref_m = result.references[0].measurement
+            ref = result.references[0] if result.references else None
+            ref_m = ref.measurement if ref else None
+            if ref_m is not None:
                 row.append(f"{ref_m.median_ms:.4f}")
+                row.append(f"{ref_m.mad_ms:.4f}")
+                for key in pct_keys:
+                    row.append(f"{ref_m.percentiles_ms.get(key, 0):.4f}")
                 if target_m is not None and target_m.median_ms > 0:
                     speedup = ref_m.median_ms / target_m.median_ms
                     row.append(f"{speedup:.2f}x")
                 else:
                     row.append(NA)
             else:
-                row += [NA, NA]
+                row += [NA, NA] + [NA] * len(pct_keys) + [NA]
+
+            if has_paired:
+                cmp = (
+                    ref.comparison
+                    if ref is not None and isinstance(ref, ReferenceResult)
+                    else None
+                )
+                if cmp is not None and cmp.paired_median_ratio is not None:
+                    row.append(f"{cmp.paired_median_ratio:.2f}x")
+                    if cmp.ci_95_low is not None and cmp.ci_95_high is not None:
+                        row.append(f"[{cmp.ci_95_low:.2f}, {cmp.ci_95_high:.2f}]")
+                    else:
+                        row.append(NA)
+                else:
+                    row += [NA, NA]
 
         rows.append(row)
 
@@ -171,3 +252,28 @@ def print_results_table(
         for bench_name, ref in failed:
             first_line = ref.validation.error.splitlines()[0] if ref.validation.error else "unknown"
             print(f"  {bench_name} vs {ref.name}: {first_line}")
+
+    print()
+    legend: list[str] = [
+        "Target/Ref (ms) : median latency per call",
+        "MAD             : median absolute deviation, median(|xi - median|), measures spread",
+    ]
+    for key in pct_keys:
+        pct_val = int(key[1:])
+        legend.append(f"{key:<16}: {pct_val}th percentile latency of the target")
+    if has_refs:
+        for key in pct_keys:
+            pct_val = int(key[1:])
+            legend.append(f"r.{key:<14}: {pct_val}th percentile latency of the reference")
+        legend.append(
+            "Speedup         : median(ref) / median(target), >1 means target is faster"
+        )
+    if has_paired:
+        legend.append(
+            "Paired          : median of per-round ratios, median(ref_i / target_i)"
+        )
+        legend.append(
+            "95% CI          : bootstrap 95% confidence interval on the paired"
+            " median ratio (10k resamples)"
+        )
+    print("\n".join(legend))
