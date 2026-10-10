@@ -8,6 +8,7 @@ class ValidationResult:
     reference_name: str
     passed: bool
     error: str | None = None
+    diff_summary: str | None = None
 
 
 @dataclass

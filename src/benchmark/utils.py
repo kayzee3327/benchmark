@@ -23,6 +23,8 @@ def print_result(result: BenchmarkResult) -> None:
             if v.error:
                 first_line = v.error.splitlines()[0]
                 print(f"    {first_line}")
+            if v.diff_summary:
+                print(v.diff_summary)
         print()
 
     # --- Measurement ---
@@ -252,6 +254,8 @@ def print_results_table(
         for bench_name, ref in failed:
             first_line = ref.validation.error.splitlines()[0] if ref.validation.error else "unknown"
             print(f"  {bench_name} vs {ref.name}: {first_line}")
+            if ref.validation.diff_summary:
+                print(ref.validation.diff_summary)
 
     print()
     legend: list[str] = [
