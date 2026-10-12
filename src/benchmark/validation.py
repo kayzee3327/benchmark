@@ -20,6 +20,32 @@ def _tensor_diff_summary(actual: Any, expected: Any) -> str | None:
     except ImportError:
         return None
 
+    if isinstance(actual, torch.Tensor) and isinstance(expected, torch.Tensor):
+        return _single_tensor_diff(actual, expected)
+
+    if isinstance(actual, (tuple, list)) and isinstance(expected, (tuple, list)):
+        parts = []
+        for i, (a, e) in enumerate(zip(actual, expected)):
+            s = _tensor_diff_summary(a, e)
+            if s is not None:
+                parts.append(f"  [{i}]:\n{s}")
+        return "\n".join(parts) if parts else None
+
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        parts = []
+        for k in actual:
+            if k in expected:
+                s = _tensor_diff_summary(actual[k], expected[k])
+                if s is not None:
+                    parts.append(f"  [{k!r}]:\n{s}")
+        return "\n".join(parts) if parts else None
+
+    return None
+
+
+def _single_tensor_diff(actual: Any, expected: Any) -> str | None:
+    import torch
+
     if not isinstance(actual, torch.Tensor) or not isinstance(expected, torch.Tensor):
         return None
 
